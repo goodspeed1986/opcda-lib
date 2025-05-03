@@ -4,6 +4,11 @@ on:
   push:
     branches: [ "main" ]
 
+# ✅ Разрешения для работы с артефактами и исходным кодом
+permissions:
+  contents: read
+  artifacts: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -20,7 +25,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: SoftingIndustrial/OPC-Classic-SDK
-        ref: main  # Можно указать тег, например: v1.0.0
+        ref: main
         path: opc-sdk-source
 
     - name: Setup Visual Studio environment
