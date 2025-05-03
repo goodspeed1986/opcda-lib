@@ -31,7 +31,7 @@ jobs:
         ref: main
         path: opc-sdk-source
 
-    - name: Setup Visual Studio environment
+    - name: Setup MSBuild and Visual Studio environment
       uses: microsoft/setup-msbuild@v1.1
 
     - name: Install CMake
@@ -39,9 +39,22 @@ jobs:
       with:
         version: 3.24.x
 
-    - name: Install Windows SDK for COM/DCOM support
+    - name: Download Visual Studio Build Tools
+      shell: powershell
       run: |
-        choco install windows-sdk-10-full --version=10.0.19041.0 --no-progress -y
+        $url = 'https://aka.ms/vs/17/release/vs_BuildTools.exe'
+        $installerPath = "$env:TEMP\vs_BuildTools.exe"
+        Invoke-WebRequest -Uri $url -OutFile $installerPath
+        Write-Output "Downloaded installer to $installerPath"
+
+    - name: Install Visual Studio Build Tools with Windows SDK
+      shell: cmd
+      run: |
+        set installerPath=%TEMP%\vs_BuildTools.exe
+        "%installerPath%" --quiet --wait --norestart --nocache ^
+          --installPath C:\BuildTools ^
+          --add Microsoft.VisualStudio.Workload.VCTools ^
+          --add Microsoft.VisualStudio.Component.Windows10SDK.19041
 
     - name: Check source directory
       run: |
