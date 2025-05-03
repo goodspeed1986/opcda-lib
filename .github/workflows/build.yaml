@@ -1,32 +1,42 @@
-name: Build Softing OPC DA Static Library
+name: Build OPC-Classic-SDK Static Library
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
+  pull_request:
+    branches: [main]
 
-# ✅ Разрешения для работы с артефактами и исходным кодом
 permissions:
   contents: read
   artifacts: write
+  releases: write
 
 jobs:
   build:
-    runs-on: windows-latest
-    env:
-      REPO_DIR: ${{ github.workspace }}\opc-sdk-source
-      BUILD_DIR: ${{ github.workspace }}\build
-      INSTALL_DIR: ${{ github.workspace }}\install
+    strategy:
+      matrix:
+        os: [windows-latest]
+        arch: [x64]
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
 
     steps:
     - name: Checkout current repository
       uses: actions/checkout@v4
 
-    - name: Checkout Softing OPC-Classic-SDK
+    - name: Checkout OPC-Classic-SDK repository
       uses: actions/checkout@v4
       with:
         repository: SoftingIndustrial/OPC-Classic-SDK
         ref: main
         path: opc-sdk-source
+
+    - name: Debug git checkout
+      run: |
+        dir opc-sdk-source
+        git -C opc-sdk-source log -1
+      shell: powershell
 
     - name: Setup Visual Studio environment
       uses: microsoft/setup-msbuild@v1.1
@@ -36,32 +46,116 @@ jobs:
       with:
         version: 3.24.x
 
-    - name: Install Windows SDK (ATL, etc.)
+    - name: Install Windows SDK
       run: |
         choco install windows-sdk-10-version-2004 --no-progress -y
 
+    - name: Check source directory
+      run: |
+        if not exist "opc-sdk-source" (
+          echo Error: opc-sdk-source directory not found
+          exit /b 1
+        )
+      shell: cmd
+
     - name: Create build directory
       run: |
-        mkdir ${{ env.BUILD_DIR }}
-        mkdir ${{ env.INSTALL_DIR }}
+        mkdir opc-sdk-source\build
+        mkdir opc-sdk-source\install
+      shell: cmd
 
-    - name: Configure CMake
-      working-directory: ${{ env.BUILD_DIR }}
+    - name: Configure CMake (Windows x64)
+      if: matrix.os == 'windows-latest' && matrix.arch == 'x64'
       run: |
-        cmake ${{ env.REPO_DIR }} `
-          -G "Visual Studio 17 2022 Win64" `
-          -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_DIR }} `
-          -DBUILD_SHARED_LIBS=OFF
+        cd opc-sdk-source\build
+        cmake .. -G "Visual Studio 17 2022" -A x64 `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DBUILD_SHARED_LIBS=OFF `
+          -DCMAKE_INSTALL_PREFIX=..\install `
+          -D_CRT_SECURE_NO_WARNINGS=ON
+      shell: cmd
 
-    - name: Build static library
-      working-directory: ${{ env.BUILD_DIR }}
+    - name: Build (Windows)
       run: |
-        cmake --build . --config Release --target install
+        cd opc-sdk-source\build
+        cmake --build . --config Release
+      shell: cmd
 
-    - name: Archive library and headers
-      uses: actions/upload-artifact@v3
+    - name: Install library (Windows)
+      run: |
+        cd opc-sdk-source\build
+        cmake --install . --config Release
+      shell: cmd
+
+    - name: Debug install output
+      run: |
+        echo Listing contents of install directory:
+        dir opc-sdk-source\install /s
+      shell: cmd
+
+    - name: Archive artifacts
+      uses: actions/upload-artifact@v4
       with:
-        name: opc-da-static-lib
+        name: opc-classic-sdk-${{ matrix.os }}-${{ matrix.arch }}
         path: |
-          ${{ env.INSTALL_DIR }}\lib\*.lib
-          ${{ env.INSTALL_DIR }}\include\*
+          opc-sdk-source/install/lib/*.lib
+          opc-sdk-source/install/include/*
+        retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v1.0-${{ github.sha }}
+        release_name: OPC-Classic-SDK Release v1.0-${{ github.sha }}
+        body: |
+          Automated release of OPC-Classic-SDK static library.
+          Includes:
+          - Windows x64 static library
+          - Header files
+        draft: false
+        prerelease: false
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Prepare single archive for release
+      run: |
+        mkdir -p opc-sdk-release/lib
+        mkdir -p opc-sdk-release/include
+
+        # Copy Windows x64 .lib
+        cp artifacts/opc-classic-sdk-windows-latest-x64/lib/*.lib opc-sdk-release/lib/
+        # Rename with platform info
+        mv opc-sdk-release/lib/*.lib opc-sdk-release/lib/opc-classic-sdk-win-x64.lib
+
+        # Copy headers from Windows build
+        cp -r artifacts/opc-classic-sdk-windows-latest-x64/include/* opc-sdk-release/include/
+
+        zip -r opc-classic-sdk-v1.0.zip opc-sdk-release
+
+        unzip -l opc-classic-sdk-v1.0.zip
+      shell: bash
+
+    - name: Upload Release Asset
+      run: |
+        echo "Uploading opc-classic-sdk-v1.0.zip to release..."
+        curl \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Content-Type: application/zip" \
+          --data-binary "@opc-classic-sdk-v1.0.zip" \
+          "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.create_release.outputs.id }}/assets?name=opc-classic-sdk-v1.0.zip"
+      shell: bash
