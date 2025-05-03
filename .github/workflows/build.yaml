@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 permissions:
-  actions: write   # Для upload-artifact
-  contents: write # Для create-release
+  actions: write
+  contents: write
 
 jobs:
   build:
@@ -31,12 +31,6 @@ jobs:
         ref: main
         path: opc-sdk-source
 
-    - name: Debug git checkout
-      run: |
-        dir opc-sdk-source
-        git -C opc-sdk-source log -1
-      shell: powershell
-
     - name: Setup Visual Studio environment
       uses: microsoft/setup-msbuild@v1.1
 
@@ -45,9 +39,9 @@ jobs:
       with:
         version: 3.24.x
 
-    - name: Install Windows SDK
+    - name: Install Windows SDK for COM/DCOM support
       run: |
-        choco install windows-sdk-10-version-2004 --no-progress -y
+        choco install windows-sdk-10-full --version=10.0.19041.0 --no-progress -y
 
     - name: Check source directory
       run: |
@@ -57,39 +51,32 @@ jobs:
         )
       shell: cmd
 
-    - name: Create build directory
+    - name: Create build and install directories
       run: |
         mkdir opc-sdk-source\build
         mkdir opc-sdk-source\install
       shell: cmd
 
     - name: Configure CMake (Windows x64)
-      if: matrix.os == 'windows-latest' && matrix.arch == 'x64'
       run: |
         cd opc-sdk-source\build
-        cmake .. -G "Visual Studio 17 2022" -A x64 `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DBUILD_SHARED_LIBS=OFF `
-          -DCMAKE_INSTALL_PREFIX=..\install `
+        cmake .. -G "Visual Studio 17 2022" -A x64 ^
+          -DCMAKE_BUILD_TYPE=Release ^
+          -DBUILD_SHARED_LIBS=OFF ^
+          -DCMAKE_INSTALL_PREFIX=..\install ^
           -D_CRT_SECURE_NO_WARNINGS=ON
       shell: cmd
 
-    - name: Build (Windows)
+    - name: Build (Windows x64)
       run: |
         cd opc-sdk-source\build
         cmake --build . --config Release
       shell: cmd
 
-    - name: Install library (Windows)
+    - name: Install library
       run: |
         cd opc-sdk-source\build
         cmake --install . --config Release
-      shell: cmd
-
-    - name: Debug install output
-      run: |
-        echo Listing contents of install directory:
-        dir opc-sdk-source\install /s
       shell: cmd
 
     - name: Archive artifacts
@@ -136,12 +123,9 @@ jobs:
         mkdir -p opc-sdk-release/lib
         mkdir -p opc-sdk-release/include
 
-        # Copy Windows x64 .lib
         cp artifacts/opc-classic-sdk-windows-latest-x64/lib/*.lib opc-sdk-release/lib/
-        # Rename with platform info
         mv opc-sdk-release/lib/*.lib opc-sdk-release/lib/opc-classic-sdk-win-x64.lib
 
-        # Copy headers from Windows build
         cp -r artifacts/opc-classic-sdk-windows-latest-x64/include/* opc-sdk-release/include/
 
         zip -r opc-classic-sdk-v1.0.zip opc-sdk-release
@@ -151,7 +135,6 @@ jobs:
 
     - name: Upload Release Asset
       run: |
-        echo "Uploading opc-classic-sdk-v1.0.zip to release..."
         curl \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Content-Type: application/zip" \
