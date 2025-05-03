@@ -1,0 +1,50 @@
+name: Build OPC DA Static Library
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      BUILD_DIR: ${{ github.workspace }}\build
+      INSTALL_DIR: ${{ github.workspace }}\install
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Setup Visual Studio environment
+      uses: microsoft/setup-msbuild@v1.1
+
+    - name: Install CMake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        version: 3.24.x
+
+    - name: Create build directory
+      run: |
+        mkdir ${{ env.BUILD_DIR }}
+        mkdir ${{ env.INSTALL_DIR }}
+
+    - name: Configure CMake
+      working-directory: ${{ env.BUILD_DIR }}
+      run: |
+        cmake .. -G "Visual Studio 17 2022 Win64" `
+                 -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_DIR }} `
+                 -DBUILD_SHARED_LIBS=OFF
+
+    - name: Build static library
+      working-directory: ${{ env.BUILD_DIR }}
+      run: |
+        cmake --build . --config Release --target install
+
+    - name: Archive library
+      uses: actions/upload-artifact@v3
+      with:
+        name: opc-da-static-lib
+        path: |
+          ${{ env.INSTALL_DIR }}\lib\*.lib
+          ${{ env.INSTALL_DIR }}\include\*
