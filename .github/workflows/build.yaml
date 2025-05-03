@@ -1,20 +1,27 @@
-name: Build OPC DA Static Library
+name: Build Softing OPC DA Static Library
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
     env:
+      REPO_DIR: ${{ github.workspace }}\opc-sdk-source
       BUILD_DIR: ${{ github.workspace }}\build
       INSTALL_DIR: ${{ github.workspace }}\install
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+    - name: Checkout current repository
+      uses: actions/checkout@v4
+
+    - name: Checkout Softing OPC-Classic-SDK
+      uses: actions/checkout@v4
+      with:
+        repository: SoftingIndustrial/OPC-Classic-SDK
+        ref: main  # Можно указать тег, например: v1.0.0
+        path: opc-sdk-source
 
     - name: Setup Visual Studio environment
       uses: microsoft/setup-msbuild@v1.1
@@ -24,6 +31,10 @@ jobs:
       with:
         version: 3.24.x
 
+    - name: Install Windows SDK (ATL, etc.)
+      run: |
+        choco install windows-sdk-10-version-2004 --no-progress -y
+
     - name: Create build directory
       run: |
         mkdir ${{ env.BUILD_DIR }}
@@ -32,16 +43,17 @@ jobs:
     - name: Configure CMake
       working-directory: ${{ env.BUILD_DIR }}
       run: |
-        cmake .. -G "Visual Studio 17 2022 Win64" `
-                 -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_DIR }} `
-                 -DBUILD_SHARED_LIBS=OFF
+        cmake ${{ env.REPO_DIR }} `
+          -G "Visual Studio 17 2022 Win64" `
+          -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_DIR }} `
+          -DBUILD_SHARED_LIBS=OFF
 
     - name: Build static library
       working-directory: ${{ env.BUILD_DIR }}
       run: |
         cmake --build . --config Release --target install
 
-    - name: Archive library
+    - name: Archive library and headers
       uses: actions/upload-artifact@v3
       with:
         name: opc-da-static-lib
