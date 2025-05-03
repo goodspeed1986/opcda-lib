@@ -7,9 +7,8 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
-  artifacts: write
-  releases: write
+  actions: write   # Для upload-artifact
+  contents: write # Для create-release
 
 jobs:
   build:
